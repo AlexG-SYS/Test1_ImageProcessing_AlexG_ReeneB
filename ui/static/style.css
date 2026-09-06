@@ -33,6 +33,7 @@ body {
   margin: 4px 0 0;
   color: var(--text-dim);
   font-size: 0.9rem;
+  max-width: 100%;
 }
 
 .layout {
@@ -43,7 +44,7 @@ body {
     "results results";
   gap: 20px;
   padding: 20px 32px 40px;
-  max-width: 1000px;
+  max-width: 100%;
 }
 
 #upload-card { grid-area: upload; }
