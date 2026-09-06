@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImageLab</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>ImageLab</h1>
+    <p>Asynchronous image processing</p>
+  </header>
+
+  <main class="layout">
+    <section class="card" id="upload-card">
+      <h2>Upload image</h2>
+
+      <div class="dropzone" id="dropzone">
+        <div id="empty-state">
+          <p>Choose a JPEG or PNG, up to 10&nbsp;MB.</p>
+          <label class="file-picker">
+            Choose image
+            <input type="file" id="file-input" accept="image/jpeg,image/png" hidden />
+          </label>
+        </div>
+
+        <div id="preview-state" hidden>
+          <img id="preview-image" alt="Selected image preview" />
+          <dl class="file-meta">
+            <dt>Name</dt><dd id="preview-name"></dd>
+            <dt>Size</dt><dd id="preview-size"></dd>
+            <dt>Type</dt><dd id="preview-type"></dd>
+          </dl>
+          <label class="file-picker file-picker--secondary">
+            Choose another image
+            <input type="file" id="file-input-replace" accept="image/jpeg,image/png" hidden />
+          </label>
+        </div>
+      </div>
+
+      <button id="process-button" type="button" disabled>Process image</button>
+      <p class="field-error" id="upload-error" role="alert" hidden></p>
+    </section>
+
+    <section class="card" id="job-card">
+      <h2>Processing job</h2>
+      <div class="empty-panel">
+        <p>No active job.</p>
+        <p class="empty-panel__hint">Upload an image to create a processing job.</p>
+      </div>
+    </section>
+
+    <section class="card" id="results-card">
+      <h2>Generated images</h2>
+      <div class="empty-panel">
+        <p>No images generated yet.</p>
+        <p class="empty-panel__hint">Processed image variants will appear here.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="event-emitter.js"></script>
+  <script src="state.js"></script>
+  <script src="data-service.js"></script>
+  <script src="render.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
