@@ -17,6 +17,7 @@ type config struct {
 	port               int
 	env                string
 	workerPollInterval time.Duration // how often the worker checks the jobs table
+	processingDelay    time.Duration // artificial delay to simulate image processing time
 	storage            struct {
 		originalsDir string // where uploaded originals are written
 		variantsDir  string // where generated variants are written
@@ -43,6 +44,7 @@ func main() {
 	flag.IntVar(&cfg.port, "port", 4000, "API server port")
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
 	flag.DurationVar(&cfg.workerPollInterval, "worker-poll-interval", 250*time.Millisecond, "Worker queue-check interval")
+	flag.DurationVar(&cfg.processingDelay, "processing-delay", 0, "Artificial per-job delay inside the worker (0 = off)")
 
 	flag.StringVar(&cfg.storage.originalsDir, "storage-originals-dir", "./storage/originals", "Directory for original uploaded images")
 	flag.StringVar(&cfg.storage.variantsDir, "storage-variants-dir", "./storage/variants", "Directory for generated image variants")

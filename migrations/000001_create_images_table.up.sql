@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS images (
@@ -9,3 +11,5 @@ CREATE TABLE IF NOT EXISTS images (
     size_bytes        bigint NOT NULL,
     created_at        timestamptz NOT NULL DEFAULT now()
 );
+
+END;
