@@ -60,3 +60,27 @@ func (m ImageModel) GetByPublicID(publicID string) (*Image, error) {
 	}
 	return &img, nil
 }
+
+// GetByID retrieves an image record from the database by its internal ID. If no record is found, it returns ErrRecordNotFound.
+func (m ImageModel) GetByID(id string) (*Image, error) {
+	query := `
+		SELECT id, public_id, original_filename, stored_filename, media_type, size_bytes, created_at
+		FROM images
+		WHERE id = $1`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var img Image
+	err := m.DB.QueryRowContext(ctx, query, id).Scan(
+		&img.ID, &img.PublicID, &img.OriginalFilename, &img.StoredFilename,
+		&img.MediaType, &img.SizeBytes, &img.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+	return &img, nil
+}

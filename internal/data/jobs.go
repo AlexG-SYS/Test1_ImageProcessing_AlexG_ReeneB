@@ -69,6 +69,55 @@ func (m JobModel) GetByPublicID(publicID string) (*Job, error) {
 }
 
 // ClaimNext retrieves the next queued job from the database, marks it as started, and returns the Job struct. If no queued jobs are available, it returns nil without an error.
-func (m JobModel) ClaimNext() (*Job, error) {
-	return nil, nil // actual logic to claim the next job will be added later.
+func (m JobModel) ClaimNext(ctx context.Context) (*Job, error) {
+	tx, err := m.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	query := `
+		SELECT id, public_id, image_id, status, queued_at
+		FROM jobs
+		WHERE status = 'queued'
+		ORDER BY queued_at
+		FOR UPDATE SKIP LOCKED
+		LIMIT 1`
+
+	var job Job
+	err = tx.QueryRowContext(ctx, query).Scan(&job.ID, &job.PublicID, &job.ImageID, &job.Status, &job.QueuedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	// Update the job's status to 'processing' and set the started_at timestamp to now.
+	_, err = tx.ExecContext(ctx,
+		`UPDATE jobs SET status = 'processing', started_at = now() WHERE id = $1`, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	job.Status = "processing"
+	return &job, nil
+}
+
+// MarkFailed updates the job's status to 'failed' and records the provided error message. It returns an error if the update fails.
+func (m JobModel) MarkCompleted(ctx context.Context, id string) error {
+	_, err := m.DB.ExecContext(ctx,
+		`UPDATE jobs SET status = 'completed', completed_at = now() WHERE id = $1`, id)
+	return err
+}
+
+// MarkFailed updates the job's status to 'failed', records the provided error message, and sets the completed_at timestamp. It returns an error if the update fails.
+func (m JobModel) MarkFailed(ctx context.Context, id, message string) error {
+	_, err := m.DB.ExecContext(ctx,
+		`UPDATE jobs SET status = 'failed', error_message = $2, completed_at = now() WHERE id = $1`,
+		id, message)
+	return err
 }

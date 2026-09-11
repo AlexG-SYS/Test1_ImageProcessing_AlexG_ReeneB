@@ -32,13 +32,15 @@ function render(current) {
   }
 
   // disabled + relabeled only while the POST is actually in flight.
-  if (current.phase === UploadPhase.UPLOADING) {
-    dom.processButton.disabled = true;
-    dom.processButton.textContent = "Uploading...";
+ if (current.phase === UploadPhase.UPLOADING) {
+  dom.processButton.disabled = true;
+  dom.processButton.textContent = "Uploading...";
+  } else if (current.phase === UploadPhase.ACCEPTED) {
+  dom.processButton.disabled = true;
+  dom.processButton.textContent = "Choose another image to process";
   } else {
-    dom.processButton.disabled = !hasSelection;
-    dom.processButton.textContent =
-      current.phase === UploadPhase.ACCEPTED ? "Upload another to process again" : "Process image";
+  dom.processButton.disabled = !hasSelection;
+  dom.processButton.textContent = "Process image";
   }
 
   if (current.phase === UploadPhase.ERROR && current.errorMessage) {

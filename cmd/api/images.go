@@ -111,13 +111,24 @@ func (app *application) createImageHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Create a job for the image processing worker to pick up and process the uploaded image.
+	job, err := app.models.Jobs.Insert(image.ID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	statusURL := fmt.Sprintf("/v1/jobs/%s", job.PublicID)
+	headers := make(http.Header)
+	headers.Set("Location", statusURL)
+
 	// Return a 201 Created response with the image's public ID and other metadata.
-	err = app.writeJSON(w, http.StatusCreated, envelope{
-		"image_id":          image.PublicID,
-		"original_filename": image.OriginalFilename,
-		"media_type":        image.MediaType,
-		"size_bytes":        image.SizeBytes,
-	}, nil)
+	err = app.writeJSON(w, http.StatusAccepted, envelope{
+		"image_id":   image.PublicID,
+		"job_id":     job.PublicID,
+		"status":     job.Status,
+		"status_url": statusURL,
+	}, headers)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}

@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS image_variants (
     id              bigserial PRIMARY KEY,
     image_id        bigint NOT NULL REFERENCES images(id) ON DELETE CASCADE,
@@ -9,3 +11,5 @@ CREATE TABLE IF NOT EXISTS image_variants (
     created_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (image_id, name)
 );
+
+END;
