@@ -5,6 +5,7 @@ const POLL_TIMEOUT_MS = 8000;
 
 function handleFileSelected(file) {
   if (!file) return;
+  if (state.isSubmitting) return; // don't swap the file out from under an in-flight upload
 
   // validate the file type and size before proceeding. If the file is invalid, set the state to ERROR with an appropriate message.
   if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -19,12 +20,23 @@ function handleFileSelected(file) {
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
 
   // If the file is valid, update the state to SELECTED, store the selected file, and create a preview URL for display.
+  const previewUrl = URL.createObjectURL(file);
   setState({
     phase: UploadPhase.SELECTED,
     selectedFile: file,
-    previewUrl: URL.createObjectURL(file),
+    previewUrl,
+    previewDimensions: null,
     errorMessage: null,
   });
+
+  // Read the pixel dimensions once the browser has decoded the preview.
+  // Ignored if the user has already picked a different file by then.
+  const probe = new Image();
+  probe.onload = () => {
+    if (state.previewUrl !== previewUrl) return;
+    setState({ previewDimensions: { width: probe.naturalWidth, height: probe.naturalHeight } });
+  };
+  probe.src = previewUrl;
 }
 
 async function handleProcessClick() {
@@ -81,6 +93,9 @@ function startObservingJob(accepted) {
       variants: [],
       error: null,
     },
+    source: state.selectedFile
+      ? { name: state.selectedFile.name, mediaType: state.selectedFile.type }
+      : null,
     polling: true,
     retrievalError: false,
   });
@@ -169,15 +184,45 @@ function handleTryAgain() {
   runPollLoop(statusUrl, observationController);
 }
 
-document.getElementById("file-input").addEventListener("change", (e) => {
+const fileInput = document.getElementById("file-input");
+
+fileInput.addEventListener("change", (e) => {
   handleFileSelected(e.target.files[0]);
   e.target.value = ""; // allow re-selecting the same file later
 });
 
-document.getElementById("file-input-replace").addEventListener("change", (e) => {
-  handleFileSelected(e.target.files[0]);
-  e.target.value = "";
+// "Choose image" / "Choose another image" are real buttons (keyboard-focusable) that open the file picker.
+document.querySelectorAll("[data-choose]").forEach((btn) => {
+  btn.addEventListener("click", () => fileInput.click());
 });
+
+// Drag & drop onto the drop zone. dragDepth counts enter/leave pairs so the
+// highlight doesn't flicker as the cursor crosses child elements.
+const dropzone = document.getElementById("dropzone");
+let dragDepth = 0;
+
+dropzone.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragDepth++;
+  if (!state.isSubmitting) setState({ isDragging: true });
+});
+dropzone.addEventListener("dragover", (e) => {
+  e.preventDefault(); // required, or the browser won't allow a drop
+  e.dataTransfer.dropEffect = state.isSubmitting ? "none" : "copy";
+});
+dropzone.addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) setState({ isDragging: false });
+});
+dropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  setState({ isDragging: false });
+  handleFileSelected(e.dataTransfer.files[0]);
+});
+
+// A file dropped outside the drop zone would make the browser navigate to it and lose the page.
+["dragover", "drop"].forEach((type) => window.addEventListener(type, (e) => e.preventDefault()));
 
 document.getElementById("process-button").addEventListener("click", handleProcessClick);
 document.getElementById("try-again-button").addEventListener("click", handleTryAgain);

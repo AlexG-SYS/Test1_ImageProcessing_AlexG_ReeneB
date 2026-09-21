@@ -1,20 +1,44 @@
 // render() is the only place that touches the DOM. It is called once on
-// load and again every time state.js emits "change"
-// it never runs on a timer and never runs from inside app.js's event handlers directly.
+// load and again every time state.js emits "change" / "jobChange".
+// It never runs on a timer and never runs from inside app.js's event handlers directly.
+
+// Mirrors `requiredVariants` in cmd/api/imageporcessing.go. Used to show
+// "Pending" placeholder cards while a job runs, and to order finished cards.
+const EXPECTED_VARIANTS = [
+  { name: "thumbnail", label: "Thumbnail", dims: "150 \u00d7 150" },
+  { name: "preview", label: "Preview", dims: "Up to 800 \u00d7 600" },
+  { name: "display", label: "Display", dims: "Up to 1200 \u00d7 900" },
+];
+
+const STATUS_META = {
+  queued: { label: "Queued", icon: "clock" },
+  processing: { label: "Processing", icon: "loader", spin: true },
+  completed: { label: "Completed", icon: "circle-check" },
+  failed: { label: "Failed", icon: "x-circle" },
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 const dom = {
+  dropzone: document.getElementById("dropzone"),
   emptyState: document.getElementById("empty-state"),
   previewState: document.getElementById("preview-state"),
   previewImage: document.getElementById("preview-image"),
   previewName: document.getElementById("preview-name"),
-  previewSize: document.getElementById("preview-size"),
-  previewType: document.getElementById("preview-type"),
+  previewTags: document.getElementById("preview-tags"),
+  chooseButtons: document.querySelectorAll("[data-choose]"),
   processButton: document.getElementById("process-button"),
+  processIcon: document.getElementById("process-icon"),
+  processLabel: document.getElementById("process-label"),
   uploadError: document.getElementById("upload-error"),
+  uploadErrorText: document.getElementById("upload-error-text"),
 
   jobEmpty: document.getElementById("job-empty"),
   jobActive: document.getElementById("job-active"),
+  jobStrip: document.getElementById("job-strip"),
   jobIdLabel: document.getElementById("job-id-label"),
   jobStatusBadge: document.getElementById("job-status-badge"),
+  jobAside: document.getElementById("job-aside"),
   pollingIndicator: document.getElementById("polling-indicator"),
   jobRetrievalError: document.getElementById("job-retrieval-error"),
   timeline: {
@@ -25,11 +49,29 @@ const dom = {
   },
 
   resultsEmpty: document.getElementById("results-empty"),
-  resultsProcessing: document.getElementById("results-processing"),
   resultsFailed: document.getElementById("results-failed"),
   resultsFailedMessage: document.getElementById("results-failed-message"),
   resultsGrid: document.getElementById("results-grid"),
 };
+
+/* ---------- small helpers ---------- */
+
+function icon(name, extraClass) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", extraClass ? `ic ${extraClass}` : "ic");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -37,155 +79,279 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+// The API's error messages are lowercase fragments ("the image could not be processed");
+// present them as a sentence.
+function sentenceCase(text) {
+  if (!text) return "";
+  const t = text.trim();
+  return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : ".");
+}
+
+function formatFileType(mime) {
+  if (mime === "image/jpeg") return "JPEG";
+  if (mime === "image/png") return "PNG";
+  return mime || "unknown";
+}
+
 function render(current, job) {
-  renderUploadCard(current, job);
+  renderUploadCard(current);
   renderJobCard(job);
   renderResultsCard(job);
 }
 
-function renderUploadCard(current, job) {
-  const hasSelection = current.phase !== UploadPhase.IDLE && current.selectedFile;
+/* ---------- upload card ---------- */
 
-  dom.emptyState.hidden = hasSelection;
+function renderUploadCard(current) {
+  const hasSelection = current.phase !== UploadPhase.IDLE && current.selectedFile;
+  const uploading = current.phase === UploadPhase.UPLOADING;
+
+  dom.dropzone.classList.toggle("is-dragover", current.isDragging);
+  dom.emptyState.hidden = !!hasSelection;
   dom.previewState.hidden = !hasSelection;
 
   if (hasSelection) {
-    dom.previewImage.src = current.previewUrl;
+    if (dom.previewImage.getAttribute("src") !== current.previewUrl) {
+      dom.previewImage.src = current.previewUrl;
+    }
     dom.previewName.textContent = current.selectedFile.name;
-    dom.previewSize.textContent = formatBytes(current.selectedFile.size);
-    dom.previewType.textContent = current.selectedFile.type || "unknown";
+
+    const parts = [formatBytes(current.selectedFile.size), formatFileType(current.selectedFile.type)];
+    if (current.previewDimensions) {
+      parts.push(`${current.previewDimensions.width} \u00d7 ${current.previewDimensions.height}`);
+    }
+    dom.previewTags.replaceChildren(...parts.map((t) => el("span", "tag", t)));
   }
 
-  // disabled + relabeled while the POST is actually in flight.
+  dom.chooseButtons.forEach((btn) => { btn.disabled = uploading; });
+
+  // Disabled + relabeled while the POST is actually in flight.
   // Also disabled once ACCEPTED — state.selectedFile still points at the
   // File object that was just submitted, so a second click here would
   // silently resubmit the exact same bytes as a brand-new job unless the
   // user genuinely picks something new via "Choose another image" first.
-  if (current.phase === UploadPhase.UPLOADING) {
+  if (uploading) {
     dom.processButton.disabled = true;
-    dom.processButton.textContent = "Uploading...";
-  } else if (current.phase === UploadPhase.ACCEPTED) {
-    dom.processButton.disabled = true;
-    dom.processButton.textContent = "Choose another image to process";
+    dom.processLabel.textContent = "Uploading\u2026";
+    dom.processIcon.firstElementChild.setAttribute("href", "#i-loader");
+    dom.processIcon.classList.add("ic--spin");
   } else {
-    dom.processButton.disabled = !hasSelection;
-    dom.processButton.textContent = "Process image";
+    if (current.phase === UploadPhase.ACCEPTED) {
+      dom.processButton.disabled = true;
+      dom.processLabel.textContent = "Choose another image to process";
+    } else {
+      dom.processButton.disabled = !hasSelection;
+      dom.processLabel.textContent = "Process image";
+    }
+    dom.processIcon.firstElementChild.setAttribute("href", "#i-upload");
+    dom.processIcon.classList.remove("ic--spin");
   }
 
   if (current.phase === UploadPhase.ERROR && current.errorMessage) {
     dom.uploadError.hidden = false;
-    dom.uploadError.textContent = current.errorMessage;
+    dom.uploadErrorText.textContent = current.errorMessage;
   } else {
     dom.uploadError.hidden = true;
   }
 }
 
+/* ---------- job card ---------- */
+
 function renderJobCard(job) {
   const hasJob = !!job.job;
 
-  dom.jobEmpty.hidden = hasJob; //"No active job" only when there truly is none
+  dom.jobEmpty.hidden = hasJob; // "No active job" only when there truly is none
   dom.jobActive.hidden = !hasJob;
   if (!hasJob) return;
 
-  // job ID and current status, always shown once a job exists.
-  dom.jobIdLabel.textContent = `Job #${job.job.id.slice(0, 8)}`;
-  dom.jobStatusBadge.textContent = job.job.status;
-  dom.jobStatusBadge.className = `status-badge status-badge--${job.job.status}`;
+  const j = job.job;
+  const status = j.status;
+  const isFailed = status === "failed";
+  const isCompleted = status === "completed";
+  const isTerminal = isCompleted || isFailed;
 
-  // Timeline steps: accepted/stored/generating/complete. The first two are
-  // always complete once a job exists, the last two are active/pending/error
-  // depending on the job's current status.
-  setTimelineStep(dom.timeline.accepted, "complete");
-  setTimelineStep(dom.timeline.stored, "complete");
+  dom.jobIdLabel.textContent = `#${j.id.slice(0, 8)}`;
+  dom.jobStrip.dataset.status = status; // tints the whole strip (see .job-strip[data-status] in style.css)
+  renderStatusBadge(status);
 
-  const isFailed = job.job.status === "failed";
-  const isTerminal = job.job.status === "completed" || isFailed;
+  // Timeline: the first two steps are always complete once a job exists.
+  // The last two are active / pending / complete / error depending on status.
+  setTimelineStep(dom.timeline.accepted, "complete", formatTime(j.queuedAt));
+  setTimelineStep(dom.timeline.stored, "complete", formatTime(j.queuedAt));
 
-  if (job.job.status === "completed") {
-    setTimelineStep(dom.timeline.generating, "complete");
-    setTimelineStep(dom.timeline.complete, "complete");
+  if (isCompleted) {
+    setTimelineStep(dom.timeline.generating, "complete", formatTime(j.startedAt));
+    setTimelineStep(dom.timeline.complete, "complete", formatTime(j.completedAt), "Complete");
   } else if (isFailed) {
-    setTimelineStep(dom.timeline.generating, "error");
-    setTimelineStep(dom.timeline.complete, "error");
+    setTimelineStep(dom.timeline.generating, "error", formatTime(j.startedAt));
+    setTimelineStep(dom.timeline.complete, "error", formatTime(j.completedAt), "Failed");
   } else {
-    setTimelineStep(dom.timeline.generating, "active");
-    setTimelineStep(dom.timeline.complete, "pending");
+    const waiting = status === "queued";
+    setTimelineStep(dom.timeline.generating, "active", waiting ? "Waiting in queue" : formatTime(j.startedAt) || "In progress");
+    setTimelineStep(dom.timeline.complete, "pending", "Pending", "Complete");
   }
 
-  // The final step must not read "Complete" when the job failed.
-  dom.timeline.complete.textContent = isFailed ? "Failed" : "Complete";
-
-  // Polling indicator is shown only while the 1-second loop is running, and
-  // never once the job has reached a terminal state (completed or failed).
+  // Auto-refresh notice: only while the 1-second loop is running, and never
+  // once the job has reached a terminal state (completed or failed).
   dom.pollingIndicator.hidden = !job.polling || isTerminal;
 
-  // Retrieval error message is shown only after a failed GET, until the user clicks "Try again" or a new job starts
+  // Retrieval error is shown only after a failed GET, until the user clicks "Try again" or a new job starts.
   dom.jobRetrievalError.hidden = !job.retrievalError;
+
+  dom.jobAside.hidden = dom.pollingIndicator.hidden && dom.jobRetrievalError.hidden;
 }
 
-// Sets a timeline step's data-state attribute to "complete", "active", "pending", or "error".
-function setTimelineStep(el, state) {
-  el.dataset.state = state; 
+// Only rebuilds the badge when the status actually changes, so the
+// spinner animation isn't restarted on every poll.
+function renderStatusBadge(status) {
+  const badge = dom.jobStatusBadge;
+  if (badge.dataset.status === status) return;
+
+  const meta = STATUS_META[status] || { label: status, icon: "clock" };
+  badge.dataset.status = status;
+  badge.className = "status-badge";
+  badge.replaceChildren(icon(meta.icon, meta.spin ? "ic--spin" : ""), el("span", "", meta.label));
 }
+
+// Sets a step's data-state ("complete" | "active" | "pending" | "error"),
+// its sub-label (usually a time), and optionally its label text.
+function setTimelineStep(stepEl, stepState, timeText, labelText) {
+  stepEl.dataset.state = stepState;
+  stepEl.querySelector(".tl-time").textContent = timeText || "";
+  if (labelText !== undefined) stepEl.querySelector(".tl-label").textContent = labelText;
+}
+
+/* ---------- results card ---------- */
 
 function renderResultsCard(job) {
   const status = job.job ? job.job.status : null;
+  const isPending = status === "queued" || status === "processing";
+  const isCompleted = status === "completed";
 
-  // The four possible states of the results card are mutually exclusive, so we can just hide/show them based on the job's current status.
+  // Mutually exclusive: empty / failed / grid (grid shows placeholders while pending, real cards when done).
   dom.resultsEmpty.hidden = status !== null;
-  dom.resultsProcessing.hidden = !(status === "queued" || status === "processing");
   dom.resultsFailed.hidden = status !== "failed";
-  dom.resultsGrid.hidden = status !== "completed";
+  dom.resultsGrid.hidden = !(isPending || isCompleted);
 
-  // If the job has failed, show the server-provided error message if available, otherwise a generic fallback.
   if (status === "failed") {
-    dom.resultsFailedMessage.textContent = job.job.error || "Processing failed.";
+    dom.resultsFailedMessage.textContent = sentenceCase(job.job.error) || "The image could not be processed.";
   }
 
-  if (status === "completed") {
-    renderVariants(job.job.variants);
+  // Rebuild the grid only when the job or mode changes, so images don't
+  // reload and shimmer animations don't restart on every poll.
+  const mode = isCompleted ? "ready" : isPending ? "pending" : "";
+  const key = mode ? `${mode}:${job.job.id}` : "";
+  if (dom.resultsGrid.dataset.key === key) return;
+  dom.resultsGrid.dataset.key = key;
+
+  if (mode === "ready") {
+    renderVariants(job.job.variants, job.source);
+  } else if (mode === "pending") {
+    renderPendingVariants();
   } else {
     // Never leave a previous job's variant cards in the DOM.
     dom.resultsGrid.replaceChildren();
   }
 }
 
-// Renders the grid of variant cards for a completed job. Each card contains an image, metadata, and links to view/download the variant.
-function renderVariants(variants) {
-  dom.resultsGrid.innerHTML = ""; 
+// Every card is laid out the same way: image (in a matte) on top,
+// then name + status, dimensions, and actions underneath.
+function variantCard(kind, label, dims, statusChip, matNode) {
+  const card = el("article", `variant-card variant-card--${kind}`);
+  card.appendChild(matNode);
 
-  // Create a card for each variant and append it to the results grid.
-  for (const variant of variants) {
-    const card = document.createElement("div");
-    card.className = "variant-card";
+  const info = el("div", "variant-info");
+  const head = el("div", "variant-head");
+  head.appendChild(el("h3", "variant-name", label));
+  head.appendChild(statusChip);
+  info.appendChild(head);
+  info.appendChild(el("p", "variant-dims", dims));
 
+  const actions = el("div", "variant-actions");
+  info.appendChild(actions);
+  card.appendChild(info);
+  return { card, actions };
+}
+
+function chip(kind, iconName, text) {
+  const c = el("span", `chip chip--${kind}`);
+  c.appendChild(icon(iconName));
+  c.appendChild(document.createTextNode(text));
+  return c;
+}
+
+function actionButton(href, iconName, text, kind, attrs) {
+  const a = el("a", `btn btn--sm btn--${kind}`);
+  if (href) a.href = href;
+  for (const [k, v] of Object.entries(attrs || {})) a.setAttribute(k, v);
+  a.appendChild(icon(iconName));
+  a.appendChild(document.createTextNode(text));
+  return a;
+}
+
+// Placeholder cards shown while the job is queued or processing.
+function renderPendingVariants() {
+  const cards = EXPECTED_VARIANTS.map((v) => {
+    const mat = el("div", "variant-mat variant-mat--pending");
+    mat.appendChild(icon("image"));
+
+    const { card, actions } = variantCard("pending", v.label, v.dims, chip("pending", "clock", "Pending"), mat);
+    actions.appendChild(actionButton(null, "external-link", "View", "ghost", { "aria-disabled": "true", tabindex: "-1" }));
+    actions.appendChild(actionButton(null, "download", "Download", "ghost", { "aria-disabled": "true", tabindex: "-1" }));
+    return card;
+  });
+  dom.resultsGrid.replaceChildren(...cards);
+}
+
+// Grid of finished variant cards.
+function renderVariants(variants, source) {
+  const rank = (name) => {
+    const i = EXPECTED_VARIANTS.findIndex((v) => v.name === name);
+    return i === -1 ? EXPECTED_VARIANTS.length : i;
+  };
+  const sorted = [...(variants || [])].sort((a, b) => rank(a.name) - rank(b.name));
+
+  const cards = sorted.map((variant) => {
+    const meta = EXPECTED_VARIANTS.find((v) => v.name === variant.name);
+    const label = meta ? meta.label : variant.name;
+
+    const mat = el("a", "variant-mat");
+    mat.href = variant.url;
+    mat.target = "_blank";
+    mat.rel = "noopener";
+    mat.setAttribute("aria-label", `Open ${label} variant`);
     const img = document.createElement("img");
     img.src = variant.url;
-    img.alt = `${variant.name} variant`;
-    card.appendChild(img);
+    img.alt = `${label} variant`;
+    img.loading = "lazy";
+    mat.appendChild(img);
 
-    const meta = document.createElement("p");
-    meta.className = "variant-meta";
-    meta.textContent = `${variant.name} \u2014 ${variant.width}\u00d7${variant.height}`;
-    card.appendChild(meta);
+    const { card, actions } = variantCard(
+      "ready",
+      label,
+      `${variant.width} \u00d7 ${variant.height}`,
+      chip("ready", "circle-check", "Ready"),
+      mat
+    );
+    actions.appendChild(actionButton(variant.url, "external-link", "View", "ghost", { target: "_blank", rel: "noopener" }));
+    actions.appendChild(actionButton(variant.url, "download", "Download", "primary", { download: downloadName(variant, source) }));
+    return card;
+  });
 
-    const actions = document.createElement("div");
-    actions.className = "variant-actions";
+  dom.resultsGrid.replaceChildren(...cards);
+}
 
-    const viewLink = document.createElement("a");
-    viewLink.href = variant.url;
-    viewLink.target = "_blank";
-    viewLink.rel = "noopener";
-    viewLink.textContent = "View";
-    actions.appendChild(viewLink);
-
-    const downloadLink = document.createElement("a");
-    downloadLink.href = variant.url;
-    downloadLink.download = variant.name;
-    downloadLink.textContent = "Download";
-    actions.appendChild(downloadLink);
-
-    card.appendChild(actions);
-    dom.resultsGrid.appendChild(card);
-  }
+// e.g. "belize-coast.jpg" + "thumbnail" -> "belize-coast-thumbnail.jpg"
+// (variant URLs have no file extension, so derive it from the uploaded file's type)
+function downloadName(variant, source) {
+  const original = (source && source.name) || "image";
+  const base = original.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "-") || "image";
+  const ext = source && source.mediaType === "image/png" ? "png" : "jpg";
+  return `${base}-${variant.name}.${ext}`;
 }
