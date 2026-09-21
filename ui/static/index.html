@@ -45,18 +45,55 @@
 
     <section class="card" id="job-card">
       <h2>Processing job</h2>
-      <div class="empty-panel">
+
+      <div id="job-empty">
         <p>No active job.</p>
         <p class="empty-panel__hint">Upload an image to create a processing job.</p>
+      </div>
+
+      <div id="job-active" hidden>
+        <div class="job-header">
+          <span id="job-id-label" class="job-id"></span>
+          <span id="job-status-badge" class="status-badge"></span>
+        </div>
+
+        <ol class="timeline">
+          <li id="timeline-accepted" class="timeline__step">Upload accepted</li>
+          <li id="timeline-stored" class="timeline__step">Original stored</li>
+          <li id="timeline-generating" class="timeline__step">Generating variants</li>
+          <li id="timeline-complete" class="timeline__step">Complete</li>
+        </ol>
+
+        <p class="polling-indicator" id="polling-indicator" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          Checking status automatically &middot; every 1 second
+        </p>
+
+        <div id="job-retrieval-error" hidden>
+          <p class="field-error">Unable to check status. The job may still be running.</p>
+          <button id="try-again-button" type="button">Try again</button>
+        </div>
       </div>
     </section>
 
     <section class="card" id="results-card">
       <h2>Generated images</h2>
-      <div class="empty-panel">
+
+      <div id="results-empty">
         <p>No images generated yet.</p>
         <p class="empty-panel__hint">Processed image variants will appear here.</p>
       </div>
+
+      <div id="results-processing" hidden>
+        <p>Images are being generated.</p>
+        <p class="empty-panel__hint">Results will appear when processing completes.</p>
+      </div>
+
+      <div id="results-failed" hidden>
+        <p class="field-error" id="results-failed-message"></p>
+      </div>
+
+      <div id="results-grid" class="results-grid" hidden></div>
     </section>
   </main>
 

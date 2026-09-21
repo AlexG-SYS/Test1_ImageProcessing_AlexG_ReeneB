@@ -34,3 +34,24 @@ function resetToIdle() {
     acceptedImage: null,
   });
 }
+
+// Single source of truth for the job polling state. Nothing else in the app
+// holds its own copy of these values. The job object is null until a job is
+// created, and then it is updated with the latest status on each poll.
+const jobState = {
+  job: null, // { id, imageId, status, queuedAt, startedAt, completedAt, variants, error } once a job exists
+  polling: false, // true only while the 1-second loop is actively running 
+  retrievalError: false, // true after a failed GET, until Try again or a new job starts 
+};
+
+function setJobState(patch) {
+  Object.assign(jobState, patch);
+  events.emit("jobChange", jobState);
+}
+
+function resetJobState() {
+  jobState.job = null;
+  jobState.polling = false;
+  jobState.retrievalError = false;
+  events.emit("jobChange", jobState);
+}

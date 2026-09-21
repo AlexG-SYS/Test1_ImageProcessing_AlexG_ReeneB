@@ -6,11 +6,24 @@
   --text-dim: #8b93a3;
   --accent: #5b8def;
   --accent-hover: #4577dd;
+  --success: #4caf7d;
   --error: #e5686b;
   --radius: 10px;
+
+  --space-page: clamp(12px, 4vw, 32px);
+  --space-card: clamp(14px, 3vw, 20px);
+  --font-h1: clamp(1.15rem, 1rem + 1vw, 1.5rem);
 }
 
 * { box-sizing: border-box; }
+
+/* Author rules like `.polling-indicator { display: flex }` and
+   `.results-grid { display: grid }` outrank the browser's built-in
+   [hidden] rule, so el.hidden = true silently did nothing on them.
+   This makes the hidden attribute always win. */
+[hidden] { display: none !important; }
+
+html { overflow-x: hidden; }
 
 body {
   margin: 0;
@@ -21,35 +34,32 @@ body {
 }
 
 .topbar {
-  padding: 24px 32px 8px;
+  padding: clamp(16px, 3vw, 24px) var(--space-page) 8px;
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 1.4rem;
-}
-
-.topbar p {
-  margin: 4px 0 0;
-  color: var(--text-dim);
-  font-size: 0.9rem;
-  max-width: 100%;
-}
+.topbar h1 { margin: 0; font-size: var(--font-h1); }
+.topbar p { margin: 4px 0 0; color: var(--text-dim); font-size: 0.9rem; }
 
 .layout {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   grid-template-areas:
     "upload job"
     "results results";
-  gap: 20px;
-  padding: 20px 32px 40px;
-  max-width: 100%;
+  gap: var(--space-card);
+  padding: var(--space-page);
+  padding-top: 20px;
+  max-width: min(1000px, 100%);
+  margin: 0 auto;
 }
 
 #upload-card { grid-area: upload; }
 #job-card { grid-area: job; }
 #results-card { grid-area: results; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr 1fr; }
+}
 
 @media (max-width: 720px) {
   .layout {
@@ -58,30 +68,29 @@ body {
   }
 }
 
+@media (max-width: 420px) {
+  .card { padding: 14px; }
+  .dropzone { padding: 16px; }
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: var(--space-card);
+  min-width: 0;
 }
 
-.card h2 {
-  margin: 0 0 14px;
-  font-size: 1rem;
-  font-weight: 600;
-}
+.card h2 { margin: 0 0 14px; font-size: 1rem; font-weight: 600; }
 
 .dropzone {
   border: 1px dashed var(--border);
   border-radius: var(--radius);
-  padding: 24px;
+  padding: clamp(16px, 4vw, 24px);
   text-align: center;
 }
 
-#empty-state p {
-  margin: 0 0 14px;
-  color: var(--text-dim);
-}
+#empty-state p { margin: 0 0 14px; color: var(--text-dim); }
 
 .file-picker {
   display: inline-block;
@@ -92,18 +101,13 @@ body {
   font-size: 0.9rem;
 }
 
-.file-picker:hover {
-  border-color: var(--accent);
-}
-
-.file-picker--secondary {
-  margin-top: 12px;
-  font-size: 0.85rem;
-}
+.file-picker:hover { border-color: var(--accent); }
+.file-picker--secondary { margin-top: 12px; font-size: 0.85rem; }
 
 #preview-image {
   max-width: 100%;
-  max-height: 220px;
+  /* max-height: clamp(140px, 28vw, 220px); */
+  width: auto;
   border-radius: 6px;
   display: block;
   margin: 0 auto 14px;
@@ -120,7 +124,7 @@ body {
 }
 
 .file-meta dt { font-weight: 600; color: var(--text); }
-.file-meta dd { margin: 0; }
+.file-meta dd { margin: 0; overflow-wrap: anywhere; }
 
 #process-button {
   width: 100%;
@@ -134,27 +138,192 @@ body {
   cursor: pointer;
 }
 
-#process-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
+#process-button:hover:not(:disabled) { background: var(--accent-hover); }
+#process-button:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
 
-#process-button:disabled {
-  background: var(--border);
-  color: var(--text-dim);
-  cursor: not-allowed;
-}
+.field-error { margin: 10px 0 0; color: var(--error); font-size: 0.85rem; }
 
-.field-error {
-  margin: 10px 0 0;
-  color: var(--error);
-  font-size: 0.85rem;
-}
-
-.empty-panel {
+.empty-panel, #job-empty, #results-empty, #results-processing {
   text-align: center;
-  padding: 40px 10px;
+  padding: clamp(24px, 6vw, 40px) 10px;
   color: var(--text-dim);
 }
 
-.empty-panel p { margin: 0; }
+.empty-panel p, #job-empty p, #results-empty p, #results-processing p { margin: 0; }
 .empty-panel__hint { font-size: 0.85rem; margin-top: 6px !important; }
+
+/* ---- Job card (Week 3) ---- */
+
+.job-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.job-id {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  border: 1px solid var(--border);
+}
+
+.status-badge--queued { color: var(--text-dim); }
+.status-badge--processing { color: var(--accent); border-color: var(--accent); }
+.status-badge--completed { color: var(--success); border-color: var(--success); }
+.status-badge--failed { color: var(--error); border-color: var(--error); }
+
+.timeline {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline__step {
+  position: relative;
+  padding-left: 26px;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+
+.timeline__step::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--panel);
+}
+
+.timeline__step[data-state="complete"] {
+  color: var(--text);
+}
+.timeline__step[data-state="complete"]::before {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.timeline__step[data-state="active"] {
+  color: var(--text);
+}
+.timeline__step[data-state="active"]::before {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.timeline__step[data-state="error"] {
+  color: var(--error);
+}
+.timeline__step[data-state="error"]::before {
+  border-color: var(--error);
+  background: var(--error);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.polling-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#job-retrieval-error {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+#try-again-button {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#try-again-button:hover { border-color: var(--accent); }
+
+/* ---- Results card (Week 3) ---- */
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.variant-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.variant-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  background: var(--bg);
+}
+
+.variant-meta {
+  margin: 0;
+  padding: 8px 10px 4px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  text-transform: capitalize;
+}
+
+.variant-actions {
+  display: flex;
+  gap: 10px;
+  padding: 4px 10px 10px;
+}
+
+.variant-actions a {
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.variant-actions a:hover { text-decoration: underline; }
