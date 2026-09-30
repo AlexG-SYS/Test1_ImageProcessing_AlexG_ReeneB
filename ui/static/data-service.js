@@ -24,3 +24,12 @@ async function submitImage(file) {
 
   return body;
 }
+
+// Fetches the status of a job from the server and returns the response.
+async function fetchJobStatus(url, signal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) {
+    throw new Error(`status check failed (HTTP ${response.status})`);
+  }
+  return response.json(); // throws on an unparseable/empty body, which is also a retrieval error
+}

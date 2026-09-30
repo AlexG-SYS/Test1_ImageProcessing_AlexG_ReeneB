@@ -171,10 +171,10 @@ func extensionFor(mediaType string) string {
 func safeProcessingError(err error) string {
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, data.ErrRecordNotFound):
-		return "the source image could not be found"
+		return "The source image could not be found"
 	case errors.Is(err, os.ErrNotExist):
-		return "the source image file is missing"
+		return "The source image file is missing"
 	default:
-		return "the image could not be processed"
+		return "The image could not be processed"
 	}
 }
