@@ -1,8 +1,9 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS jobs (
-    id            bigserial PRIMARY KEY,
-    public_id     uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+
+    id        uuid        PRIMARY KEY DEFAULT uuidv7(),
+    public_id UUID    NOT NULL DEFAULT uuidv4(),
     image_id      bigint NOT NULL REFERENCES images(id) ON DELETE CASCADE,
     status        text NOT NULL DEFAULT 'queued'
                   CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
